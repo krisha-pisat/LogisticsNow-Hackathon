@@ -1,21 +1,32 @@
 import { useMemo, useState, useEffect } from 'react';
 import { useFiltersStore } from '../store/useFiltersStore';
 import { Shipment } from '../types';
-import { generateMockShipments } from '../lib/mockShipmentGenerator';
-
-// Singleton in-memory mock store
-let MOCK_DATA: Shipment[] | null = null;
+import { fetchCSVShipments, getCachedShipments } from '../lib/mockShipmentGenerator';
 
 export function useShipments() {
-  const [data, setData] = useState<Shipment[]>([]);
+  const [data, setData] = useState<Shipment[]>(getCachedShipments() || []);
+  const [isLoading, setIsLoading] = useState(data.length === 0);
   const filters = useFiltersStore();
 
   useEffect(() => {
-    // Only generate once per session
-    if (!MOCK_DATA) {
-      MOCK_DATA = generateMockShipments(1000);
+    let mounted = true;
+
+    async function loadData() {
+      try {
+        const shipments = await fetchCSVShipments();
+        if (mounted) {
+          setData(shipments);
+          setIsLoading(false);
+        }
+      } catch (err) {
+        console.error('Failed to load shipment data:', err);
+        if (mounted) setIsLoading(false);
+      }
     }
-    setData(MOCK_DATA);
+
+    if (data.length === 0) {
+      loadData();
+    }
   }, []);
 
   const filteredData = useMemo(() => {
@@ -24,22 +35,20 @@ export function useShipments() {
       if (filters.dateRange?.from && new Date(shipment.shipment_date) < filters.dateRange.from) return false;
       if (filters.dateRange?.to && new Date(shipment.shipment_date) > filters.dateRange.to) return false;
 
-      // Region filter (treating origin OR destination here for simplicity)
+      // Region filter (origin OR destination matches city name)
       if (filters.region !== 'All') {
-        // e.g., if region is "West", one would map state to region. 
-        // We'll treat our "region" filter directly passing city names for this demo.
         if (shipment.origin_city !== filters.region && shipment.destination_city !== filters.region) {
-            return false;
+          return false;
         }
       }
 
-      // Bu type... our mock data doesn't have business unit yet, skip or mock it
-      // if (filters.businessUnit !== 'All' && shipment.business_unit !== filters.businessUnit) return false;
+      // Customer segment as business unit
+      if (filters.businessUnit !== 'All' && shipment.customer_segment !== filters.businessUnit) return false;
 
-      // Vehicle
+      // Vehicle type
       if (filters.vehicleType !== 'All' && shipment.vehicle_type !== filters.vehicleType) return false;
 
-      // Fuel
+      // Fuel type
       if (filters.fuelType !== 'All' && shipment.fuel_type !== filters.fuelType) return false;
 
       return true;
@@ -49,6 +58,6 @@ export function useShipments() {
   return {
     shipments: filteredData,
     totalShipments: filteredData.length,
-    isLoading: data.length === 0,
+    isLoading,
   };
 }

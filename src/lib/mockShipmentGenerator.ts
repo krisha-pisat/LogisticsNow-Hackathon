@@ -1,89 +1,136 @@
-import { Shipment, FuelType, VehicleType, UrgencyLevel } from '../types';
+import { Shipment, VehicleType, FuelType, UrgencyLevel } from '../types';
 
-const CITIES = [
-  { name: 'New York', lat: 40.7128, lng: -74.0060 },
-  { name: 'Los Angeles', lat: 34.0522, lng: -118.2437 },
-  { name: 'Chicago', lat: 41.8781, lng: -87.6298 },
-  { name: 'Houston', lat: 29.7604, lng: -95.3698 },
-  { name: 'Phoenix', lat: 33.4484, lng: -112.0740 },
-  { name: 'Philadelphia', lat: 39.9526, lng: -75.1652 },
-  { name: 'San Antonio', lat: 29.4241, lng: -98.4936 },
-  { name: 'San Diego', lat: 32.7157, lng: -117.1611 },
-  { name: 'Dallas', lat: 32.7767, lng: -96.7970 },
-  { name: 'San Jose', lat: 37.3382, lng: -121.8863 },
-  { name: 'Seattle', lat: 47.6062, lng: -122.3321 },
-  { name: 'Denver', lat: 39.7392, lng: -104.9903 },
-  { name: 'Boston', lat: 42.3601, lng: -71.0589 },
-];
-
-const VEHICLES: VehicleType[] = ['Truck', 'Train', 'Ship', 'Air'];
-const FUELS: Record<string, FuelType[]> = {
-  Truck: ['Diesel', 'Electric', 'Hydrogen', 'Biodiesel'],
-  Train: ['Diesel', 'Electric'],
-  Ship: ['Diesel'],
-  Air: ['Diesel', 'Sustainable Aviation Fuel'],
+/**
+ * Turkish city coordinates for map rendering
+ */
+const CITY_COORDS: Record<string, { lat: number; lng: number }> = {
+  'İstanbul': { lat: 41.0082, lng: 28.9784 },
+  'Ankara': { lat: 39.9334, lng: 32.8597 },
+  'İzmir': { lat: 38.4237, lng: 27.1428 },
+  'Bursa': { lat: 40.1885, lng: 29.0610 },
+  'Antalya': { lat: 36.8969, lng: 30.7133 },
+  'Adana': { lat: 36.9914, lng: 35.3308 },
+  'Konya': { lat: 37.8746, lng: 32.4932 },
+  'Gaziantep': { lat: 37.0662, lng: 37.3833 },
+  'Kayseri': { lat: 38.7312, lng: 35.4787 },
+  'Samsun': { lat: 41.2867, lng: 36.3300 },
 };
 
-const URGENCY: UrgencyLevel[] = ['High', 'Medium', 'Low'];
-
-function randomChoice<T>(arr: T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)];
+function getCoords(city: string): { lat: number; lng: number } {
+  return CITY_COORDS[city] || { lat: 39.0, lng: 35.0 };
 }
 
-function randomInt(min: number, max: number): number {
-  return Math.floor(Math.random() * (max - min + 1) + min);
+/**
+ * Generate a deterministic shipment date from shipment ID
+ * Spread across last 30 days
+ */
+function generateDate(id: number): string {
+  const now = new Date('2026-03-01');
+  const daysAgo = id % 30;
+  const date = new Date(now);
+  date.setDate(date.getDate() - daysAgo);
+  return date.toISOString();
 }
 
-// Haversine formula
-function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371; // km
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = 
-    Math.sin(dLat/2) * Math.sin(dLat/2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
-    Math.sin(dLon/2) * Math.sin(dLon/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  return R * c;
+/**
+ * Map urgency from customer segment + on_time
+ */
+function deriveUrgency(segment: string, onTime: number): UrgencyLevel {
+  if (segment === 'Kurumsal' && onTime === 0) return 'High';
+  if (segment === 'Kurumsal') return 'Medium';
+  return 'Low';
 }
 
-export function generateMockShipments(count = 1000): Shipment[] {
+// Cached parsed data
+let cachedShipments: Shipment[] | null = null;
+let csvText: string | null = null;
+
+/**
+ * Parse CSV text into Shipment array
+ */
+function parseCSVToShipments(text: string): Shipment[] {
+  const lines = text.split('\n').filter(l => l.trim());
+  if (lines.length < 2) return [];
+
+  const headers = lines[0].split(',').map(h => h.trim());
   const shipments: Shipment[] = [];
-  const today = new Date();
-  
-  for (let i = 0; i < count; i++) {
-    const origin = randomChoice(CITIES);
-    let destination = randomChoice(CITIES);
-    while (destination.name === origin.name) {
-      destination = randomChoice(CITIES);
-    }
 
-    const vehicle_type = randomChoice(VEHICLES);
-    const fuel_type = randomChoice(FUELS[vehicle_type]);
-    const urgency_level = randomChoice(URGENCY);
-    const weight_kg = randomInt(500, 25000);
-    const distance_km = calculateDistance(origin.lat, origin.lng, destination.lat, destination.lng) * (1 + (Math.random() * 0.1)); // Add 0-10% routing overhead
-    const load_factor = +(Math.random() * (1 - 0.3) + 0.3).toFixed(2); // 0.3 to 1.0
-    
-    // Pick a date in the last 30 days
-    const daysAgo = randomInt(0, 30);
-    const shipment_date = new Date(today.getTime() - (daysAgo * 24 * 60 * 60 * 1000)).toISOString();
+  for (let i = 1; i < lines.length; i++) {
+    const values = lines[i].split(',');
+    if (values.length < 5) continue;
+
+    const row: Record<string, string> = {};
+    headers.forEach((h, idx) => { row[h] = (values[idx] || '').trim(); });
+
+    const id = parseInt(row['Shipment_ID']) || i;
+    const loadFactor = parseFloat(row['load_factor']);
+    const co2 = parseFloat(row['co2_emission_kg']);
 
     shipments.push({
-      shipment_id: `SHP-${10000 + i}`,
-      origin_city: origin.name,
-      origin_coords: { lat: origin.lat, lng: origin.lng },
-      destination_city: destination.name,
-      destination_coords: { lat: destination.lat, lng: destination.lng },
-      vehicle_type,
-      fuel_type,
-      weight_kg,
-      distance_km: Math.round(distance_km),
-      load_factor,
-      shipment_date,
-      urgency_level,
+      shipment_id: `SHP-${String(id).padStart(4, '0')}`,
+      origin_city: row['Origin_City'] || 'Unknown',
+      destination_city: row['Destination_City'] || 'Unknown',
+      origin_coords: getCoords(row['Origin_City']),
+      destination_coords: getCoords(row['Destination_City']),
+      vehicle_type: (row['vehicle_type'] as VehicleType) || 'Diesel',
+      fuel_type: (row['fuel_type'] as FuelType) || 'Diesel',
+      weight_kg: parseFloat(row['Weight_kg']) || 500,
+      distance_km: parseFloat(row['Distance_km']) || 100,
+      load_factor: isNaN(loadFactor) ? 0.5 : loadFactor,
+      shipment_date: generateDate(id),
+      urgency_level: deriveUrgency(row['Customer_Segment'] || 'Bireysel', parseInt(row['On_Time']) || 1),
+      // CSV extras
+      shipment_type: row['Shipment_Type'] as any,
+      customer_segment: row['Customer_Segment'],
+      on_time: parseInt(row['On_Time']) || 0,
+      traffic_intensity: parseFloat(row['traffic_intensity']) || 0,
+      avg_speed_kmph: parseFloat(row['avg_speed_kmph']) || 0,
+      capacity_kg: parseFloat(row['capacity_kg']) || 0,
+      emission_factor: isNaN(parseFloat(row['emission_factor'])) ? undefined : parseFloat(row['emission_factor']),
+      co2_emission_kg: isNaN(co2) ? undefined : co2,
+      lane_id: row['lane_id'],
     });
   }
 
   return shipments;
 }
+
+/**
+ * Synchronous data access — parses embedded CSV data
+ */
+export function generateMockShipments(): Shipment[] {
+  if (cachedShipments) return cachedShipments;
+
+  // Will be populated by the async loader or by the embedded data
+  return [];
+}
+
+/**
+ * Async loader for fetching CSV from public folder
+ */
+export async function fetchCSVShipments(): Promise<Shipment[]> {
+  if (cachedShipments) return cachedShipments;
+
+  try {
+    const response = await fetch('/carbon_intelligence_dataset.csv');
+    const text = await response.text();
+    cachedShipments = parseCSVToShipments(text);
+    return cachedShipments;
+  } catch (err) {
+    console.error('Failed to load CSV:', err);
+    return [];
+  }
+}
+
+/**
+ * Set cached data (useful for SSR or initial load)
+ */
+export function setCachedShipments(data: Shipment[]) {
+  cachedShipments = data;
+}
+
+export function getCachedShipments(): Shipment[] | null {
+  return cachedShipments;
+}
+
+export { CITY_COORDS };

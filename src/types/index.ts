@@ -1,6 +1,7 @@
 export type UrgencyLevel = 'High' | 'Medium' | 'Low';
-export type FuelType = 'Diesel' | 'Electric' | 'Hydrogen' | 'Sustainable Aviation Fuel' | 'Biodiesel';
-export type VehicleType = 'Truck' | 'Train' | 'Ship' | 'Air';
+export type FuelType = 'Diesel' | 'Electric' | 'Hydrogen' | 'Sustainable Aviation Fuel' | 'Biodiesel' | 'Petrol';
+export type VehicleType = 'Truck' | 'Train' | 'Ship' | 'Air' | 'Diesel' | 'Electric' | 'Hybrid';
+export type ShipmentType = 'Kara' | 'Hava' | 'Deniz';
 export type MetricMode = 'co2' | 'nox' | 'cost';
 
 export interface Shipment {
@@ -16,6 +17,16 @@ export interface Shipment {
   load_factor: number;
   shipment_date: string;
   urgency_level: UrgencyLevel;
+  // Extra fields from CSV
+  shipment_type?: ShipmentType;
+  customer_segment?: string;
+  on_time?: number;
+  traffic_intensity?: number;
+  avg_speed_kmph?: number;
+  capacity_kg?: number;
+  emission_factor?: number;
+  co2_emission_kg?: number;
+  lane_id?: string;
   // Computed fields
   emissions_kg?: number;
   nox_kg?: number;
