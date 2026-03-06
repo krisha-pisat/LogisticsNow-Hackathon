@@ -1,3 +1,5 @@
+'use client';
+
 import {
   Table,
   TableBody,
@@ -7,6 +9,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
+import { motion } from "framer-motion";
 
 interface Column {
   key: string;
@@ -31,9 +34,9 @@ export function DataTable({ columns, data, keyField, className, emptyMessage = "
           <TableHeader className="bg-muted/50">
             <TableRow className="hover:bg-transparent">
               {columns.map((col) => (
-                <TableHead 
-                  key={col.key} 
-                  className={cn("text-xs font-semibold text-muted-foreground h-10 tracking-wider uppercase", 
+                <TableHead
+                  key={col.key}
+                  className={cn("text-xs font-semibold text-muted-foreground h-10 tracking-wider uppercase",
                     col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'
                   )}
                 >
@@ -50,12 +53,18 @@ export function DataTable({ columns, data, keyField, className, emptyMessage = "
                 </TableCell>
               </TableRow>
             ) : (
-              data.map((row) => (
-                <TableRow key={row[keyField]} className="hover:bg-muted/30 transition-colors">
+              data.map((row, index) => (
+                <TableRow
+                  key={row[keyField]}
+                  className="hover:bg-primary/[0.03] transition-colors duration-200 cursor-default"
+                  style={{
+                    animation: `fadeSlideIn 0.3s ease-out ${index * 0.04}s both`,
+                  }}
+                >
                   {columns.map((col) => (
-                    <TableCell 
+                    <TableCell
                       key={`${row[keyField]}-${col.key}`}
-                      className={cn("text-sm py-3", 
+                      className={cn("text-sm py-3 transition-colors duration-200",
                         col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'
                       )}
                     >

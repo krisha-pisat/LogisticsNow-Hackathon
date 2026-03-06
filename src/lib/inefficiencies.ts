@@ -7,22 +7,29 @@ export interface InefficientShipment extends Shipment {
 
 export function detectInefficiencies(shipments: Shipment[]): InefficientShipment[] {
   return shipments
-    .filter(s => s.load_factor < 0.5 || (s.vehicle_type === 'Air' && s.urgency_level === 'Low'))
+    .filter(s =>
+      s.load_factor < 0.5 ||
+      (s.vehicle_type === 'Air' && s.urgency_level === 'Low') ||
+      (s.distance_km < 200 && s.weight_kg > 10000) // heavy short-haul
+    )
     .map(s => {
       const reasons: string[] = [];
       let score = 0;
 
       if (s.load_factor < 0.5) {
         reasons.push(`Low Load Factor (${(s.load_factor * 100).toFixed(0)}%)`);
-        score += (0.5 - s.load_factor) * 10; // weight lower load factor more
+        score += (0.5 - s.load_factor) * 10;
       }
       if (s.vehicle_type === 'Air' && s.urgency_level === 'Low') {
         reasons.push('Low Urgency Air Freight');
-        score += 5; // significant penalty
+        score += 5;
+      }
+      if (s.distance_km < 200 && s.weight_kg > 10000) {
+        reasons.push('Heavy Short-Haul');
+        score += 3;
       }
 
-      // Multiply by distance to account for absolute waste
-      score *= (s.distance_km / 1000); 
+      score *= (s.distance_km / 1000);
 
       return {
         ...s,
