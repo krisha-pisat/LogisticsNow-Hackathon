@@ -5,17 +5,20 @@ import { calculateESGScore, getShipmentMetric, getMetricLabel, getMetricUnit } f
 import { aggregateByLane } from '@/lib/aggregation';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { ChartCard } from '@/components/ui/chart-card';
+import { Button } from '@/components/ui/button';
 import { CSVUploadZone } from '@/components/ui/csv-upload-zone';
-import { Activity, Leaf, AlertTriangle, Truck } from 'lucide-react';
+import { Activity, Leaf, AlertTriangle, Truck, FileDown } from 'lucide-react';
 import { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useFiltersStore } from '@/store/useFiltersStore';
+import { useDataStore } from '@/store/useDataStore';
 import { StaggerContainer, StaggerItem, FloatingParticles, CHART_TOOLTIP_STYLE, CardSkeleton, ChartSkeleton } from '@/components/motion';
 import { MetricMode } from '@/types';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, BarChart, Bar, Legend
 } from 'recharts';
+import Papa from 'papaparse';
 
 function MetricToggle({ value, onChange }: { value: MetricMode; onChange: (m: MetricMode) => void }) {
   const modes: { key: MetricMode; label: string }[] = [
@@ -43,6 +46,19 @@ export default function Dashboard() {
   const { shipments, isLoading, initialized } = useShipments();
   const router = useRouter();
   const { metricMode, setMetricMode } = useFiltersStore();
+  const { rawRecords } = useDataStore();
+
+  const downloadCleanedCsv = () => {
+    if (!rawRecords || rawRecords.length === 0) return;
+    const csv = Papa.unparse(rawRecords as any[]);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `CIOA_Cleaned_Dataset_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const metrics = useMemo(() => {
     let totalMetric = 0;
@@ -118,7 +134,19 @@ export default function Dashboard() {
           <h1 className="text-3xl font-bold tracking-tight">Dashboard Overview</h1>
           <p className="text-muted-foreground text-sm">Monitor enterprise-level emissions and logistics efficiency metrics.</p>
         </div>
-        <MetricToggle value={metricMode} onChange={setMetricMode} />
+        <div className="flex items-center gap-2">
+          <MetricToggle value={metricMode} onChange={setMetricMode} />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={downloadCleanedCsv}
+            disabled={!rawRecords || rawRecords.length === 0}
+            title={rawRecords && rawRecords.length > 0 ? 'Download cleaned dataset from backend processing' : 'Upload/Load data first'}
+          >
+            <FileDown className="w-3.5 h-3.5 mr-1" />
+            Cleaned CSV
+          </Button>
+        </div>
       </div>
 
       <StaggerContainer className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 relative z-10" staggerDelay={0.1}>

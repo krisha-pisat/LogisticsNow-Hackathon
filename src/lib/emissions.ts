@@ -63,7 +63,8 @@ export function calculateShipmentCO2(shipment: Shipment, customFactors?: Record<
   const ton = weight_kg / 1000;
   const factors = customFactors || currentFactors;
   const factor = factors[vehicle_type]?.[fuel_type] || 0.1;
-  const loadAdjustment = 1 + (1 - load_factor) * 0.5;
+  // Stronger load-factor penalty: low utilization = more emissions per ton-km (empty running)
+  const loadAdjustment = 1 + (1 - Math.min(load_factor, 1)) * 1.2;
   return ton * distance_km * factor * loadAdjustment;
 }
 
