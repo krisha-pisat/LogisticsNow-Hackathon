@@ -5,6 +5,7 @@ import { calculateESGScore, getShipmentMetric, getMetricLabel, getMetricUnit } f
 import { aggregateByLane } from '@/lib/aggregation';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { ChartCard } from '@/components/ui/chart-card';
+import { CSVUploadZone } from '@/components/ui/csv-upload-zone';
 import { Activity, Leaf, AlertTriangle, Truck } from 'lucide-react';
 import { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
@@ -39,7 +40,7 @@ function MetricToggle({ value, onChange }: { value: MetricMode; onChange: (m: Me
 }
 
 export default function Dashboard() {
-  const { shipments, isLoading } = useShipments();
+  const { shipments, isLoading, initialized } = useShipments();
   const router = useRouter();
   const { metricMode, setMetricMode } = useFiltersStore();
 
@@ -79,6 +80,21 @@ export default function Dashboard() {
     if (metricMode === 'cost') return `$${(val / 1000).toLocaleString('en-US', { maximumFractionDigits: 1 })}k`;
     return `${(val / 1000).toLocaleString('en-US', { maximumFractionDigits: 1 })} kg`;
   };
+
+  // Show upload zone if no data has been loaded yet
+  if (!initialized && !isLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Dashboard Overview</h1>
+            <p className="text-muted-foreground text-sm">Upload your shipment dataset to begin analysis.</p>
+          </div>
+        </div>
+        <CSVUploadZone variant="hero" />
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (

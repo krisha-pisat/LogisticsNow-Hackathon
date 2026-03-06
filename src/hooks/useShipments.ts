@@ -1,36 +1,15 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo } from 'react';
 import { useFiltersStore } from '../store/useFiltersStore';
-import { Shipment } from '../types';
-import { fetchCSVShipments, getCachedShipments } from '../lib/mockShipmentGenerator';
+import { useDataStore } from '../store/useDataStore';
 
 export function useShipments() {
-  const [data, setData] = useState<Shipment[]>(getCachedShipments() || []);
-  const [isLoading, setIsLoading] = useState(data.length === 0);
+  const { shipments: allShipments, isLoading, summary, error, initialized } = useDataStore();
   const filters = useFiltersStore();
 
-  useEffect(() => {
-    let mounted = true;
-
-    async function loadData() {
-      try {
-        const shipments = await fetchCSVShipments();
-        if (mounted) {
-          setData(shipments);
-          setIsLoading(false);
-        }
-      } catch (err) {
-        console.error('Failed to load shipment data:', err);
-        if (mounted) setIsLoading(false);
-      }
-    }
-
-    if (data.length === 0) {
-      loadData();
-    }
-  }, []);
+  // No auto-load — data only appears after user uploads a CSV
 
   const filteredData = useMemo(() => {
-    return data.filter(shipment => {
+    return allShipments.filter(shipment => {
       // Date filter
       if (filters.dateRange?.from && new Date(shipment.shipment_date) < filters.dateRange.from) return false;
       if (filters.dateRange?.to && new Date(shipment.shipment_date) > filters.dateRange.to) return false;
@@ -53,11 +32,14 @@ export function useShipments() {
 
       return true;
     });
-  }, [data, filters.dateRange, filters.region, filters.businessUnit, filters.vehicleType, filters.fuelType]);
+  }, [allShipments, filters.dateRange, filters.region, filters.businessUnit, filters.vehicleType, filters.fuelType]);
 
   return {
     shipments: filteredData,
     totalShipments: filteredData.length,
     isLoading,
+    summary,
+    error,
+    initialized,
   };
 }

@@ -3,6 +3,7 @@
 import { useShipments } from '@/hooks/useShipments';
 import { calculateShipmentCO2, getShipmentMetric, getMetricLabel, getMetricUnit, DEFAULT_EMISSION_FACTORS, setEmissionFactors, resetEmissionFactors } from '@/lib/emissions';
 import { ChartCard } from '@/components/ui/chart-card';
+import { CSVUploadZone } from '@/components/ui/csv-upload-zone';
 import { useMemo, useState, useCallback, useRef } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -11,11 +12,11 @@ import { Label } from '@/components/ui/label';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CHART_TOOLTIP_STYLE } from '@/components/motion';
 import { useFiltersStore } from '@/store/useFiltersStore';
+import { useDataStore } from '@/store/useDataStore';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import Papa from 'papaparse';
 import {
-  ChevronDown, ChevronUp, Upload, Beaker, RotateCcw, SlidersHorizontal, MapPin
+  ChevronDown, ChevronUp, Upload, Beaker, RotateCcw, SlidersHorizontal, MapPin, Loader2
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -23,14 +24,16 @@ import {
 } from 'recharts';
 
 export default function EmissionsPage() {
-  const { shipments } = useShipments();
+  const { shipments, initialized } = useShipments();
   const router = useRouter();
   const { metricMode, addSelectedShipmentIds } = useFiltersStore();
+  const { uploadFile } = useDataStore();
   const [page, setPage] = useState(1);
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showFactors, setShowFactors] = useState(false);
   const [factorMultiplier, setFactorMultiplier] = useState([100]);
+  const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const PAGE_SIZE = 10;
 
@@ -87,39 +90,32 @@ export default function EmissionsPage() {
     });
   };
 
-  const handleCSVUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  // Upload CSV through the Python backend pipeline
+  const handleCSVUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!file.name.endsWith('.csv')) {
-      toast.error('Invalid file type', { description: 'Please upload a .csv file.' });
+    if (!file.name.endsWith('.csv') && !file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
+      toast.error('Invalid file type', { description: 'Please upload a .csv or .xlsx file.' });
       return;
     }
 
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (results) => {
-        if (results.errors.length > 0) {
-          toast.error('CSV Parse Error', { description: results.errors[0].message });
-          return;
-        }
-        const requiredFields = ['origin_city', 'destination_city', 'vehicle_type', 'weight_kg', 'distance_km'];
-        const headers = results.meta.fields || [];
-        const missing = requiredFields.filter(f => !headers.includes(f));
-        if (missing.length > 0) {
-          toast.error('Missing required columns', { description: `Missing: ${missing.join(', ')}` });
-          return;
-        }
-        toast.success('CSV Imported', { description: `${results.data.length} records parsed. (Preview mode — data shown in console)` });
-        console.log('%c[CSV Import]', 'color:#10B981;font-weight:bold', results.data);
-      },
-      error: (err) => {
-        toast.error('Failed to parse CSV', { description: err.message });
-      }
-    });
-
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  }, []);
+    setIsUploading(true);
+    try {
+      const summary = await uploadFile(file);
+      toast.success('Dataset Processed by Backend', {
+        description: `${summary.total_records} records • ${summary.validation_flags} validation flags • ${summary.inefficient_shipments} inefficiencies detected`,
+        duration: 6000,
+      });
+      setPage(1);
+    } catch (err: any) {
+      toast.error('Backend Processing Failed', {
+        description: err.message || 'Check that the Python backend is running on port 8000.',
+      });
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }, [uploadFile]);
 
   const sendToSimulation = () => {
     if (selectedIds.size === 0) {
@@ -131,6 +127,20 @@ export default function EmissionsPage() {
     router.push('/simulation');
   };
 
+  if (!initialized) {
+    return (
+      <div className="space-y-6">
+        <motion.div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Emissions Ledger</h1>
+            <p className="text-muted-foreground text-sm">Upload a shipment dataset to analyze emissions.</p>
+          </div>
+        </motion.div>
+        <CSVUploadZone variant="hero" />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <motion.div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
@@ -139,9 +149,13 @@ export default function EmissionsPage() {
           <p className="text-muted-foreground text-sm">Detailed breakdown of {label.toLowerCase()} per shipment.</p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleCSVUpload} />
-          <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
-            <Upload className="w-3.5 h-3.5 mr-1.5" /> Upload CSV
+          <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleCSVUpload} />
+          <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
+            {isUploading ? (
+              <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Processing...</>
+            ) : (
+              <><Upload className="w-3.5 h-3.5 mr-1.5" /> Upload CSV</>
+            )}
           </Button>
           <Button variant="outline" size="sm" onClick={() => setShowFactors(!showFactors)}>
             <SlidersHorizontal className="w-3.5 h-3.5 mr-1.5" /> Factors
