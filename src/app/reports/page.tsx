@@ -8,8 +8,6 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Download, FileText, CheckCircle2, Layers } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
-import html2canvas from 'html2canvas';
-import jsPDF from 'jspdf';
 import { format } from 'date-fns';
 import { motion } from 'framer-motion';
 import { StaggerContainer, StaggerItem, AnimatedProgress } from '@/components/motion';
@@ -66,31 +64,72 @@ export default function ReportsPage() {
     };
   }, [filteredShipments]);
 
-  const scopeLabel = reportScope === 'scope1' ? 'Scope 1 (Direct)' : reportScope === 'scope2' ? 'Scope 2 (Energy)' : 'Scope 3 (Transport)';
+  const scopeLabel =
+    reportScope === 'scope1'
+      ? 'Scope 1 (Direct)'
+      : reportScope === 'scope2'
+        ? 'Scope 2 (Energy)'
+        : 'Scope 3 (Transport)';
 
   const handleDownload = async () => {
-    if (!reportRef.current) return;
+    if (typeof window === 'undefined') return;
+
+    if (!reportRef.current) {
+      toast.error('Nothing to export', {
+        description: 'The report content is not ready yet.',
+      });
+      return;
+    }
+
+    if (filteredShipments.length === 0) {
+      toast.error('No data to export', {
+        description: 'Load or upload shipment data before downloading a report.',
+      });
+      return;
+    }
+
     setDownloading(true);
     setDownloadProgress(0);
 
     const interval = setInterval(() => {
-      setDownloadProgress(prev => Math.min(prev + 15, 90));
+      setDownloadProgress((prev) => Math.min(prev + 15, 90));
     }, 200);
 
     try {
-      const canvas = await html2canvas(reportRef.current, { scale: 2, useCORS: true });
+      const html2canvasModule = await import('html2canvas');
+      const jsPDFModule = await import('jspdf');
+      const html2canvas = html2canvasModule.default;
+      const JsPDF = jsPDFModule.default;
+
+      const canvas = await html2canvas(reportRef.current, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+      });
       const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'px', format: [canvas.width, canvas.height] });
+      const pdf = new JsPDF({
+        orientation: 'portrait',
+        unit: 'px',
+        format: [canvas.width, canvas.height],
+      });
       pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
-      pdf.save(`CIOA_ESG_Report_${reportScope}_${format(new Date(), 'yyyy-MM-dd')}.pdf`);
+      pdf.save(
+        `CIOA_ESG_Report_${reportScope}_${format(new Date(), 'yyyy-MM-dd')}.pdf`,
+      );
       setDownloadProgress(100);
       toast.success('PDF report downloaded');
     } catch (err) {
       console.error('Failed to generate PDF', err);
-      toast.error('Failed to generate PDF', { description: 'Please try again.' });
+      toast.error('Failed to generate PDF', {
+        description:
+          'This browser does not fully support some of the new color formats Tailwind uses. Try a recent Chrome/Edge build or disable experimental color spaces.',
+      });
     } finally {
       clearInterval(interval);
-      setTimeout(() => { setDownloading(false); setDownloadProgress(0); }, 1000);
+      setTimeout(() => {
+        setDownloading(false);
+        setDownloadProgress(0);
+      }, 1000);
     }
   };
 
@@ -157,7 +196,27 @@ export default function ReportsPage() {
       </div>
 
       {/* The Printable Report Container */}
-      <motion.div className="border rounded-xl shadow-lg bg-white overflow-hidden" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.2 }} ref={reportRef}>
+      <motion.div
+        className="border rounded-xl shadow-lg bg-white overflow-hidden"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.2 }}
+        ref={reportRef}
+        // Override Tailwind CSS color variables with simple hex colors
+        style={
+          {
+            '--background': '#ffffff',
+            '--foreground': '#020617',
+            '--primary': '#0f766e',
+            '--primary-foreground': '#f9fafb',
+            '--muted': '#f3f4f6',
+            '--muted-foreground': '#6b7280',
+            '--card': '#ffffff',
+            '--card-foreground': '#020617',
+            '--border': '#e5e7eb',
+          } as React.CSSProperties
+        }
+      >
         <div className="p-10 space-y-8 bg-white text-slate-900">
           {/* Header */}
           <div className="flex justify-between items-end border-b pb-6">

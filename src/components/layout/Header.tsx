@@ -1,6 +1,8 @@
 'use client';
 
+import { useMemo } from 'react';
 import { useFiltersStore } from '@/store/useFiltersStore';
+import { useDataStore } from '@/store/useDataStore';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Filter, Menu, Download, Bell } from 'lucide-react';
 import { useFilters } from '@/hooks/useFilters';
@@ -21,12 +23,33 @@ import Link from 'next/link';
 
 const VEHICLES = ['All', 'Truck', 'Train', 'Ship', 'Air'];
 const FUELS = ['All', 'Diesel', 'Electric', 'Hydrogen', 'Biodiesel', 'Sustainable Aviation Fuel'];
-const REGIONS = ['All', 'North America', 'Europe', 'Asia Pacific'];
+const DEFAULT_REGIONS = ['All', 'North America', 'Europe', 'Asia Pacific'];
 const BUS_UNITS = ['All', 'B2B Freight', 'D2C Express', 'Heavy Industrial'];
 
 export function Header() {
   useFilters();
+  const { shipments } = useDataStore();
   const { vehicleType, fuelType, region, businessUnit, setVehicleType, setFuelType, setRegion, setBusinessUnit } = useFiltersStore();
+
+  const regionOptions = useMemo(() => {
+    if (!shipments || shipments.length === 0) {
+      return DEFAULT_REGIONS;
+    }
+
+    const citySet = new Set<string>();
+    shipments.forEach((s) => {
+      if (s.origin_city) citySet.add(s.origin_city);
+      if (s.destination_city) citySet.add(s.destination_city);
+    });
+
+    let options = ['All', ...Array.from(citySet).sort((a, b) => a.localeCompare(b, 'tr'))];
+
+    if (region && !options.includes(region)) {
+      options = ['All', region, ...options.filter((r) => r !== region && r !== 'All')];
+    }
+
+    return options;
+  }, [shipments, region]);
 
   return (
     <motion.header
@@ -55,13 +78,13 @@ export function Header() {
 
       <div className="flex items-center space-x-2 md:space-x-4 overflow-x-auto w-full md:w-auto justify-end scrollbar-hide">
         {/* Extended Filters */}
-        <div className="hidden xl:flex items-center space-x-2">
+        <div className="flex items-center space-x-2 min-w-[130px]">
           <Select value={region} onValueChange={setRegion}>
             <SelectTrigger className="w-[130px] h-9 text-xs bg-muted/50 border-transparent hover:bg-muted transition-colors">
               <SelectValue placeholder="Region" />
             </SelectTrigger>
             <SelectContent>
-              {REGIONS.map((r) => (
+              {regionOptions.map((r) => (
                 <SelectItem key={r} value={r} className="text-xs">{r}</SelectItem>
               ))}
             </SelectContent>
