@@ -6,29 +6,18 @@ import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Label } from '@/components/ui/label';
 import { useMemo, useState, useCallback } from 'react';
-import { Settings, CheckCircle2, ArrowDown, Sparkles, GripVertical, Package, Train, Clock, DollarSign } from 'lucide-react';
+import { Settings, ArrowDown, Sparkles, DollarSign } from 'lucide-react';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import CountUp from 'react-countup';
 import { AnimatedProgress, CHART_TOOLTIP_STYLE, StaggerContainer, StaggerItem } from '@/components/motion';
-import { generateOptimizationSuggestions, calculateSuggestionTotals, generateSankeyData } from '@/lib/optimization';
+import { generateOptimizationSuggestions, calculateSuggestionTotals, generateSankeyData, generateLaneSavingsData } from '@/lib/optimization';
 import { calculateShipmentCO2 } from '@/lib/emissions';
 import { OptimizationSuggestion } from '@/types';
 import { toast } from 'sonner';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
-
-const SUGGESTION_ICONS: Record<string, React.ReactNode> = {
-  consolidation: <Package className="w-4 h-4" />,
-  mode_switch: <Train className="w-4 h-4" />,
-  delay: <Clock className="w-4 h-4" />,
-};
-
-const PRIORITY_COLORS: Record<string, string> = {
-  high: 'border-brand-red/30 bg-brand-red/5',
-  medium: 'border-brand-orange/30 bg-brand-orange/5',
-  low: 'border-border bg-card',
-};
+import { OptimizationSuggestionCard } from '@/components/optimization/OptimizationSuggestionCard';
 
 export default function OptimizationPage() {
   const { shipments } = useShipments();
@@ -55,6 +44,76 @@ export default function OptimizationPage() {
   // Sankey-like flow comparison data
   const flowData = useMemo(() => generateSankeyData(shipments, suggestions), [shipments, suggestions]);
 
+  // Lane-level CO₂ savings (top insight)
+  const laneSavingsData = useMemo(
+    () => generateLaneSavingsData(shipments, suggestions).slice(0, 8),
+    [shipments, suggestions]
+  );
+
+  // Fleet-level "truck" (leg) count & load factor impact
+  const fleetImpact = useMemo(() => {
+    // Only look at shipments that are part of at least one *applied* suggestion
+    const appliedSuggestions = suggestions.filter((s) => s.applied);
+    if (appliedSuggestions.length === 0) return null;
+
+    const appliedIds = new Set<string>();
+    appliedSuggestions.forEach((sug) => {
+      sug.shipmentIds.forEach((id) => appliedIds.add(id));
+    });
+
+    const appliedShipments = shipments.filter((s) => appliedIds.has(s.shipment_id));
+    if (appliedShipments.length === 0) return null;
+
+    // Treat each shipment as a "truck/leg" for this KPI
+    const baselineTruckCount = appliedShipments.length;
+
+    // Reductions from different suggestion types:
+    // - consolidation: N shipments on same lane/day -> 1 vehicle  => reduce by (N - 1)
+    // - mode_switch: mode change only (vehicle still used)        => no count change
+    // - delay: scheduling change only                             => no count change
+    let reducedTrucks = 0;
+
+    appliedSuggestions.forEach((sug) => {
+      const countInSuggestion = sug.shipmentIds.filter((id) => appliedIds.has(id)).length;
+
+      if (countInSuggestion === 0) return;
+
+      if (sug.type === 'consolidation' && countInSuggestion > 1) {
+        reducedTrucks += countInSuggestion - 1;
+      }
+    });
+
+    const afterTruckCount = Math.max(1, baselineTruckCount - reducedTrucks);
+    const eliminated = Math.max(0, baselineTruckCount - afterTruckCount);
+
+    // Derive average load from the same applied shipments, tolerant to string / numeric values
+    const loadValues = appliedShipments
+      .map((s) => {
+        const raw: any = (s as any).load_factor;
+        const v = typeof raw === 'number' ? raw : Number(raw);
+        return Number.isFinite(v) ? v : null;
+      })
+      .filter((v): v is number => v !== null && v > 0);
+
+    let baselineAvgLoadPct: number | null = null;
+    let afterAvgLoadPct: number | null = null;
+
+    if (loadValues.length > 0) {
+      const avgLoad = loadValues.reduce((sum, v) => sum + v, 0) / loadValues.length;
+      const afterAvgLoad = Math.min(1, avgLoad * (baselineTruckCount / afterTruckCount));
+      baselineAvgLoadPct = avgLoad * 100;
+      afterAvgLoadPct = afterAvgLoad * 100;
+    }
+
+    return {
+      baselineTruckCount,
+      afterTruckCount,
+      eliminated,
+      baselineAvgLoadPct,
+      afterAvgLoadPct,
+    };
+  }, [shipments, suggestions]);
+
   const toggleSuggestion = useCallback((id: string) => {
     setSuggestions(prev => prev.map(s => s.id === id ? { ...s, applied: !s.applied } : s));
   }, []);
@@ -71,13 +130,13 @@ export default function OptimizationPage() {
         <p className="text-muted-foreground text-sm">AI-driven routing and consolidation suggestions.</p>
       </motion.div>
 
-      <div className="grid gap-6 md:grid-cols-3">
+      <div className="grid gap-6 md:grid-cols-3 items-start">
         {/* Left: Engine + Stats */}
         <div className="md:col-span-1 space-y-4">
           <ChartCard title="Consolidation Engine">
-            <div className="space-y-6 flex flex-col items-center justify-center text-center h-full pt-8">
-              <motion.div className="h-20 w-20 bg-primary/10 rounded-full flex items-center justify-center" animate={{ rotate: 360 }} transition={{ duration: 8, repeat: Infinity, ease: 'linear' }}>
-                <Settings className="w-10 h-10 text-primary" />
+            <div className="space-y-4 flex flex-col items-center justify-center text-center py-2">
+              <motion.div className="h-16 w-16 bg-primary/10 rounded-full flex items-center justify-center" animate={{ rotate: 360 }} transition={{ duration: 8, repeat: Infinity, ease: 'linear' }}>
+                <Settings className="w-8 h-8 text-primary" />
               </motion.div>
               <div>
                 <h3 className="text-2xl font-bold"><CountUp end={suggestions.length} duration={2} /></h3>
@@ -120,35 +179,14 @@ export default function OptimizationPage() {
         <div className="md:col-span-2 space-y-6">
           {/* Interactive Suggestion Cards */}
           <ChartCard title="Optimization Suggestions" description="Toggle or reorder suggestions. Drag to prioritize.">
-            <Reorder.Group axis="y" values={suggestions} onReorder={setSuggestions} className="space-y-3 mt-2 max-h-[400px] overflow-y-auto pr-1">
+          <Reorder.Group axis="y" values={suggestions} onReorder={setSuggestions} className="space-y-3 mt-2 max-h-[260px] overflow-y-auto pr-1" >
               {suggestions.map(sug => (
                 <Reorder.Item key={sug.id} value={sug} className="list-none">
-                  <motion.div
-                    className={`border rounded-lg p-3 flex items-start gap-3 cursor-grab active:cursor-grabbing transition-colors ${sug.applied ? 'bg-primary/5 border-primary/30' : PRIORITY_COLORS[sug.priority]}`}
-                    whileHover={{ scale: 1.01 }}
-                    layout
-                  >
-                    <GripVertical className="w-4 h-4 text-muted-foreground shrink-0 mt-1" />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-primary">{SUGGESTION_ICONS[sug.type]}</span>
-                        <p className="text-sm font-semibold truncate">{sug.title}</p>
-                      </div>
-                      <p className="text-xs text-muted-foreground mb-2">{sug.description}</p>
-                      <div className="flex gap-3 text-xs">
-                        <span className="text-primary font-medium">-{sug.co2_savings_kg.toFixed(0)} kg CO₂</span>
-                        <span className="text-muted-foreground">-${sug.cost_savings_usd.toFixed(0)}</span>
-                        <span className="text-muted-foreground">{sug.shipmentIds.length} shipments</span>
-                      </div>
-                    </div>
-                    <Button
-                      size="sm" variant={sug.applied ? "default" : "outline"}
-                      className={`shrink-0 text-xs ${sug.applied ? 'bg-primary text-white' : ''}`}
-                      onClick={() => toggleSuggestion(sug.id)}
-                    >
-                      {sug.applied ? <><CheckCircle2 className="w-3 h-3 mr-1" /> Applied</> : 'Apply'}
-                    </Button>
-                  </motion.div>
+                  <OptimizationSuggestionCard
+                    suggestion={sug}
+                    shipments={shipments}
+                    onToggle={toggleSuggestion}
+                  />
                 </Reorder.Item>
               ))}
             </Reorder.Group>
@@ -156,18 +194,122 @@ export default function OptimizationPage() {
 
           {/* Sankey-like flow comparison */}
           <ChartCard title="Current vs Optimized Flow" description="Emissions by transport mode — before and after applied suggestions.">
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={flowData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+            <ResponsiveContainer width="100%" height={180}>
+              <BarChart data={flowData} margin={{ top: 10, right: 30, left: 20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                <XAxis dataKey="name" stroke="#9CA3AF" fontSize={12} tickLine={false} axisLine={false} />
+                <XAxis dataKey="name" stroke="#9CA3AF" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `${(val / 1000).toFixed(0)}k`} />
                 <YAxis stroke="#9CA3AF" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `${(val / 1000).toFixed(0)}k`} />
                 <Tooltip cursor={{ fill: 'transparent' }} contentStyle={CHART_TOOLTIP_STYLE} formatter={(val: any) => [`${Number(val).toFixed(0)} kg`, '']} />
-                <Legend />
+                <Legend iconSize={10} wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
                 <Bar dataKey="current" name="Current" fill="#111827" radius={[4, 4, 0, 0]} maxBarSize={60} isAnimationActive={true} animationDuration={1200} animationBegin={200} animationEasing="ease-out" />
                 <Bar dataKey="optimized" name="Optimized" fill="#10B981" radius={[4, 4, 0, 0]} maxBarSize={60} isAnimationActive={true} animationDuration={1200} animationBegin={600} animationEasing="ease-out" />
               </BarChart>
             </ResponsiveContainer>
           </ChartCard>
+
+          {/* Lane-level CO₂ savings */}
+          <ChartCard
+            title="Lane CO₂ Savings"
+            description="Routes where applied optimizations deliver the highest emissions reduction."
+          >
+            <ResponsiveContainer width="100%" height={180}>
+              <BarChart
+                layout="vertical"
+                data={laneSavingsData}
+                margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#E5E7EB" />
+                <XAxis
+                  type="number"
+                  stroke="#9CA3AF"
+                  fontSize={12}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(val) => `${(val / 1000).toFixed(0)}k`}
+                />
+                <YAxis
+                  type="category"
+                  dataKey="lane"
+                  stroke="#9CA3AF"
+                  fontSize={10}
+                  tickLine={false}
+                  axisLine={false}
+                  width={140}
+                />
+                <Tooltip
+                  cursor={{ fill: 'transparent' }}
+                  contentStyle={CHART_TOOLTIP_STYLE}
+                  formatter={(val: any) => [`${Number(val).toFixed(0)} kg`, 'CO₂ savings']}
+                />
+                <Bar
+                  dataKey="savings"
+                  name="CO₂ savings"
+                  fill="#16A34A"
+                  radius={[0, 4, 4, 0]}
+                  maxBarSize={20}
+                  isAnimationActive={true}
+                  animationDuration={1200}
+                  animationBegin={300}
+                  animationEasing="ease-out"
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          </ChartCard>
+
+          {/* Fleet-wide truck count reduction */}
+          {fleetImpact && (
+            <ChartCard
+              title="Fleet Impact"
+              description="Truck count and load factor improvement from applied consolidations."
+            >
+              <div className="flex flex-col items-center justify-center gap-4 text-sm pt-1">
+                <div className="grid grid-cols-2 gap-8 items-center w-full max-w-md">
+                  <div className="text-center">
+                    <div className="text-[11px] text-muted-foreground uppercase tracking-wide">
+                      Trucks (Before)
+                    </div>
+                    <div className="mt-1 text-xl font-semibold">
+                      {fleetImpact.baselineTruckCount.toLocaleString()}
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-[11px] text-muted-foreground uppercase tracking-wide">
+                      Trucks (After)
+                    </div>
+                    <div className="mt-1 text-xl font-semibold text-emerald-600">
+                      {fleetImpact.afterTruckCount.toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+
+                {fleetImpact.baselineAvgLoadPct != null &&
+                  fleetImpact.afterAvgLoadPct != null && (
+                    <div className="grid grid-cols-2 gap-8 items-center w-full max-w-md">
+                      <div className="text-center">
+                        <div className="text-[11px] text-muted-foreground uppercase tracking-wide">
+                          Avg Load (Before)
+                        </div>
+                        <div className="mt-1 text-lg font-semibold">
+                          {fleetImpact.baselineAvgLoadPct.toFixed(0)}%
+                        </div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-[11px] text-muted-foreground uppercase tracking-wide">
+                          Avg Load (After)
+                        </div>
+                        <div className="mt-1 text-lg font-semibold text-emerald-600">
+                          {fleetImpact.afterAvgLoadPct.toFixed(0)}%
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                <div className="text-xs font-semibold text-emerald-700 mt-1">
+                  ↓ {fleetImpact.eliminated.toLocaleString()} trucks eliminated
+                </div>
+              </div>
+            </ChartCard>
+          )}
         </div>
       </div>
     </div>

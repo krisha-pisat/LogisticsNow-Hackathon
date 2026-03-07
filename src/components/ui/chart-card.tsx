@@ -23,9 +23,9 @@ export function ChartCard({ title, description, children, className, action }: C
         boxShadow: "0px 12px 40px rgba(0,0,0,0.08)",
         transition: { duration: 0.2 }
       }}
-      className="h-full flex flex-col"
+      className="flex flex-col"
     >
-      <Card className={cn("flex flex-col h-full glass-card relative overflow-hidden group", className)}>
+      <Card className={cn("flex flex-col glass-card relative overflow-hidden group", className)}>
         {/* Animated gradient top accent */}
         <motion.div
           className="absolute top-0 left-0 right-0 h-[2px] gradient-border"
@@ -41,7 +41,7 @@ export function ChartCard({ title, description, children, className, action }: C
           </div>
           {action && <div>{action}</div>}
         </CardHeader>
-        <CardContent className="flex-1 min-h-[300px]">
+        <CardContent className="flex-1">
           {children}
         </CardContent>
       </Card>

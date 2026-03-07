@@ -1,8 +1,8 @@
 @echo off
-setlocal ENABLEDELAYEDEXPANSION
+setlocal
 
-REM Change to the project root (folder containing package.json and backend)
-cd /d "%~dp0LogisticsNow-Hackathon"
+REM Move to folder where the bat file exists
+cd /d "%~dp0"
 
 echo ==========================================
 echo  Starting CIOA frontend and backend...
@@ -11,23 +11,37 @@ echo  - Backend : http://localhost:8000
 echo ==========================================
 echo.
 
-REM Start the Python FastAPI backend in a new window
+REM ---------- START BACKEND ----------
+
 if exist "backend\venv\Scripts\activate.bat" (
-  echo Starting backend using existing virtualenv...
-  start "CIOA Backend" cmd /k "cd /d \"%cd%\backend\" && call venv\Scripts\activate.bat && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+
+    echo Starting backend using virtual environment...
+
+    start "CIOA Backend" cmd /k ^
+    "cd /d \"%~dp0backend\" && ^
+    call venv\Scripts\activate && ^
+    uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+
 ) else (
-  echo Starting backend (no venv detected)...
-  start "CIOA Backend" cmd /k "cd /d \"%cd%\backend\" && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+
+    echo Virtual environment not found. Starting backend normally...
+
+    start "CIOA Backend" cmd /k ^
+    "cd /d \"%~dp0backend\" && ^
+    uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+
 )
 
-REM Start the Next.js frontend in a new window
-echo Starting frontend dev server...
-start "CIOA Frontend" cmd /k "cd /d \"%cd%\" && npm run dev"
+REM ---------- START FRONTEND ----------
+
+echo Starting frontend...
+
+start "CIOA Frontend" cmd /k ^
+"cd /d \"%~dp0\" && npm run dev"
 
 echo.
-echo Both servers have been launched in separate windows.
-echo You can close this window now.
+echo Both servers started in new windows.
+echo You may close this window.
 
 endlocal
-exit /b 0
-
+exit

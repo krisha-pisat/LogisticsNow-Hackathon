@@ -155,3 +155,83 @@ export function generateSankeyData(shipments: Shipment[], suggestions: Optimizat
         savings: Math.max(0, Math.round(data.current - data.optimized)),
     }));
 }
+
+/**
+ * Lane-level CO₂ savings (before vs after) to highlight where optimization works best.
+ */
+export function generateLaneSavingsData(
+    shipments: Shipment[],
+    suggestions: OptimizationSuggestion[],
+) {
+    const laneMap = new Map<
+        string,
+        {
+            lane: string;
+            baseline: number;
+            optimized: number;
+        }
+    >();
+
+    const shipmentById = new Map<string, Shipment>();
+
+    // Baseline per lane
+    shipments.forEach((s) => {
+        shipmentById.set(s.shipment_id, s);
+        const key = `${s.origin_city} → ${s.destination_city}`;
+        const co2 = calculateShipmentCO2(s);
+
+        if (!laneMap.has(key)) {
+            laneMap.set(key, {
+                lane: key,
+                baseline: 0,
+                optimized: 0,
+            });
+        }
+
+        const laneEntry = laneMap.get(key)!;
+        laneEntry.baseline += co2;
+        laneEntry.optimized += co2;
+    });
+
+    // Apply suggestion impacts per lane (based on applied suggestions only)
+    const applied = suggestions.filter((s) => s.applied && s.co2_savings_kg > 0);
+
+    applied.forEach((sug) => {
+        const laneKeys = new Set<string>();
+
+        sug.shipmentIds.forEach((id) => {
+            const shipment = shipmentById.get(id);
+            if (!shipment) return;
+            const key = `${shipment.origin_city} → ${shipment.destination_city}`;
+            laneKeys.add(key);
+        });
+
+        if (laneKeys.size === 0) return;
+
+        const perLaneSaving = sug.co2_savings_kg / laneKeys.size;
+
+        laneKeys.forEach((key) => {
+            const laneEntry = laneMap.get(key);
+            if (!laneEntry) return;
+            laneEntry.optimized = Math.max(0, laneEntry.optimized - perLaneSaving);
+        });
+    });
+
+    const result = Array.from(laneMap.values())
+        .map((lane) => {
+            const baseline = Math.max(0, Math.round(lane.baseline));
+            const optimized = Math.max(0, Math.round(lane.optimized));
+            const savings = Math.max(0, baseline - optimized);
+            return {
+                lane: lane.lane,
+                baseline,
+                optimized,
+                savings,
+            };
+        })
+        .filter((row) => row.savings > 0)
+        .sort((a, b) => b.savings - a.savings);
+
+    return result;
+}
+
