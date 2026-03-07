@@ -10,7 +10,7 @@ import { Settings, ArrowDown, Sparkles, DollarSign } from 'lucide-react';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import CountUp from 'react-countup';
 import { AnimatedProgress, CHART_TOOLTIP_STYLE, StaggerContainer, StaggerItem } from '@/components/motion';
-import { generateOptimizationSuggestions, calculateSuggestionTotals, generateSankeyData, generateLaneSavingsData } from '@/lib/optimization';
+import { generateOptimizationSuggestions, calculateSuggestionTotals, generateSankeyData, generateLaneSavingsData, generateFuelSavingsData } from '@/lib/optimization';
 import { calculateShipmentCO2 } from '@/lib/emissions';
 import { OptimizationSuggestion } from '@/types';
 import { toast } from 'sonner';
@@ -43,6 +43,12 @@ export default function OptimizationPage() {
 
   // Sankey-like flow comparison data
   const flowData = useMemo(() => generateSankeyData(shipments, suggestions), [shipments, suggestions]);
+
+  // Fuel-type emission reductions (for explanatory insight)
+  const fuelSavingsData = useMemo(
+    () => generateFuelSavingsData(shipments, suggestions),
+    [shipments, suggestions]
+  );
 
   // Lane-level CO₂ savings (top insight)
   const laneSavingsData = useMemo(
@@ -194,17 +200,50 @@ export default function OptimizationPage() {
 
           {/* Sankey-like flow comparison */}
           <ChartCard title="Current vs Optimized Flow" description="Emissions by transport mode — before and after applied suggestions.">
-            <ResponsiveContainer width="100%" height={180}>
-              <BarChart data={flowData} margin={{ top: 10, right: 30, left: 20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                <XAxis dataKey="name" stroke="#9CA3AF" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `${(val / 1000).toFixed(0)}k`} />
-                <YAxis stroke="#9CA3AF" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `${(val / 1000).toFixed(0)}k`} />
-                <Tooltip cursor={{ fill: 'transparent' }} contentStyle={CHART_TOOLTIP_STYLE} formatter={(val: any) => [`${Number(val).toFixed(0)} kg`, '']} />
-                <Legend iconSize={10} wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
-                <Bar dataKey="current" name="Current" fill="#111827" radius={[4, 4, 0, 0]} maxBarSize={60} isAnimationActive={true} animationDuration={1200} animationBegin={200} animationEasing="ease-out" />
-                <Bar dataKey="optimized" name="Optimized" fill="#10B981" radius={[4, 4, 0, 0]} maxBarSize={60} isAnimationActive={true} animationDuration={1200} animationBegin={600} animationEasing="ease-out" />
-              </BarChart>
-            </ResponsiveContainer>
+            <div className="space-y-3">
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart data={flowData} margin={{ top: 10, right: 30, left: 20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+                  <XAxis dataKey="name" stroke="#9CA3AF" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `${(val / 1000).toFixed(0)}k`} />
+                  <YAxis stroke="#9CA3AF" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `${(val / 1000).toFixed(0)}k`} />
+                  <Tooltip cursor={{ fill: 'transparent' }} contentStyle={CHART_TOOLTIP_STYLE} formatter={(val: any) => [`${Number(val).toFixed(0)} kg`, '']} />
+                  <Legend iconSize={10} wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
+                  <Bar dataKey="current" name="Current" fill="#111827" radius={[4, 4, 0, 0]} maxBarSize={60} isAnimationActive={true} animationDuration={1200} animationBegin={200} animationEasing="ease-out" />
+                  <Bar dataKey="optimized" name="Optimized" fill="#10B981" radius={[4, 4, 0, 0]} maxBarSize={60} isAnimationActive={true} animationDuration={1200} animationBegin={600} animationEasing="ease-out" />
+                </BarChart>
+              </ResponsiveContainer>
+
+              {fuelSavingsData.length > 0 && (
+                <div className="border-t border-border/60 pt-2 mt-1">
+                  <div className="text-xs font-semibold text-muted-foreground mb-1">
+                    Emission reduction by fuel type
+                  </div>
+                  <div className="space-y-0.5 text-xs">
+                    {fuelSavingsData.map((row) => (
+                      <div key={row.fuelType} className="flex items-center justify-between">
+                        <span className="text-muted-foreground">
+                          {row.fuelType}
+                        </span>
+                        <span className="font-medium text-emerald-700">
+                          ↓ {row.savings.toLocaleString()} kg CO₂&nbsp;
+                          <span className="text-[11px] text-muted-foreground">
+                            ({row.reductionPct.toFixed(1)}%)
+                          </span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {fuelSavingsData[0] && (
+                    <p className="mt-2 text-[11px] text-muted-foreground">
+                      Most savings currently come from {fuelSavingsData[0].fuelType.toLowerCase()} shipments,
+                      because they contribute the largest share of baseline emissions. Fuels with already
+                      lower emissions show smaller percentage reductions.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
           </ChartCard>
 
           {/* Lane-level CO₂ savings */}

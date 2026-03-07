@@ -117,8 +117,10 @@ export function calculateSuggestionTotals(suggestions: OptimizationSuggestion[])
 export function generateSankeyData(shipments: Shipment[], suggestions: OptimizationSuggestion[]) {
     // Group by vehicle type
     const modeGroups = new Map<string, { current: number; optimized: number }>();
+    const shipmentById = new Map<string, Shipment>();
 
-    shipments.forEach(s => {
+    shipments.forEach((s) => {
+        shipmentById.set(s.shipment_id, s);
         const co2 = calculateShipmentCO2(s);
         if (!modeGroups.has(s.vehicle_type)) {
             modeGroups.set(s.vehicle_type, { current: 0, optimized: 0 });
@@ -128,24 +130,32 @@ export function generateSankeyData(shipments: Shipment[], suggestions: Optimizat
         grp.optimized += co2;
     });
 
-    // Apply suggestion impacts
-    const appliedSuggestions = suggestions.filter(s => s.applied);
-    appliedSuggestions.forEach(sug => {
-        if (sug.type === 'mode_switch') {
-            const airGroup = modeGroups.get('Air');
-            const trainGroup = modeGroups.get('Train') || { current: 0, optimized: 0 };
-            if (airGroup) {
-                airGroup.optimized -= sug.co2_savings_kg;
-                trainGroup.optimized += sug.co2_savings_kg * 0.15;
-                modeGroups.set('Train', trainGroup);
-            }
-        } else {
-            // Distribute savings to truck group
-            const truckGroup = modeGroups.get('Truck');
-            if (truckGroup) {
-                truckGroup.optimized -= sug.co2_savings_kg;
-            }
-        }
+    // Apply suggestion impacts by distributing savings across involved vehicle types
+    const appliedSuggestions = suggestions.filter((s) => s.applied && s.co2_savings_kg > 0);
+
+    appliedSuggestions.forEach((sug) => {
+        const involved: Shipment[] = [];
+
+        sug.shipmentIds.forEach((id) => {
+            const shipment = shipmentById.get(id);
+            if (shipment) involved.push(shipment);
+        });
+
+        if (involved.length === 0) return;
+
+        const totalCO2 = involved.reduce((sum, s) => sum + calculateShipmentCO2(s), 0);
+        if (totalCO2 <= 0) return;
+
+        involved.forEach((s) => {
+            const group = modeGroups.get(s.vehicle_type);
+            if (!group) return;
+
+            const co2 = calculateShipmentCO2(s);
+            const share = co2 / totalCO2;
+            const savingForThisShipment = sug.co2_savings_kg * share;
+
+            group.optimized = Math.max(0, group.optimized - savingForThisShipment);
+        });
     });
 
     return Array.from(modeGroups.entries()).map(([name, data]) => ({
@@ -154,6 +164,91 @@ export function generateSankeyData(shipments: Shipment[], suggestions: Optimizat
         optimized: Math.max(0, Math.round(data.optimized)),
         savings: Math.max(0, Math.round(data.current - data.optimized)),
     }));
+}
+
+/**
+ * Fuel-type CO₂ savings (before vs after) to explain where reductions come from.
+ */
+export function generateFuelSavingsData(
+    shipments: Shipment[],
+    suggestions: OptimizationSuggestion[],
+) {
+    const fuelMap = new Map<
+        string,
+        {
+            fuelType: string;
+            baseline: number;
+            optimized: number;
+        }
+    >();
+
+    const shipmentById = new Map<string, Shipment>();
+
+    // Baseline per fuel type
+    shipments.forEach((s) => {
+        shipmentById.set(s.shipment_id, s);
+        const key = s.fuel_type;
+        const co2 = calculateShipmentCO2(s);
+
+        if (!fuelMap.has(key)) {
+            fuelMap.set(key, {
+                fuelType: key,
+                baseline: 0,
+                optimized: 0,
+            });
+        }
+
+        const entry = fuelMap.get(key)!;
+        entry.baseline += co2;
+        entry.optimized += co2;
+    });
+
+    // Apply suggestion impacts by distributing savings across the fuel types
+    const applied = suggestions.filter((s) => s.applied && s.co2_savings_kg > 0);
+
+    applied.forEach((sug) => {
+        const involved: Shipment[] = [];
+
+        sug.shipmentIds.forEach((id) => {
+            const shipment = shipmentById.get(id);
+            if (shipment) involved.push(shipment);
+        });
+
+        if (involved.length === 0) return;
+
+        const totalCO2 = involved.reduce((sum, s) => sum + calculateShipmentCO2(s), 0);
+        if (totalCO2 <= 0) return;
+
+        involved.forEach((s) => {
+            const co2 = calculateShipmentCO2(s);
+            const share = co2 / totalCO2;
+            const savingForThisShipment = sug.co2_savings_kg * share;
+            const key = s.fuel_type;
+            const entry = fuelMap.get(key);
+            if (!entry) return;
+            entry.optimized = Math.max(0, entry.optimized - savingForThisShipment);
+        });
+    });
+
+    const result = Array.from(fuelMap.values())
+        .map((row) => {
+            const baseline = Math.max(0, Math.round(row.baseline));
+            const optimized = Math.max(0, Math.round(row.optimized));
+            const savings = Math.max(0, baseline - optimized);
+            const reductionPct = baseline > 0 ? (savings / baseline) * 100 : 0;
+
+            return {
+                fuelType: row.fuelType,
+                baseline,
+                optimized,
+                savings,
+                reductionPct,
+            };
+        })
+        .filter((row) => row.savings > 0)
+        .sort((a, b) => b.savings - a.savings);
+
+    return result;
 }
 
 /**
