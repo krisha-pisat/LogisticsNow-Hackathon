@@ -383,110 +383,92 @@ export default function MapComponent({
         )}
       </AnimatePresence>
 
-      <MapContainer
-        center={[39.5, 32.5]}
-        zoom={5}
-        style={{ height: '520px', width: '100%', borderRadius: '0.75rem' }}
-        scrollWheelZoom={true}
-        className="z-0"
-        eventHandlers={onMapClick ? { click: handleMapClick } : undefined}
-      >
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager_labels_under/{z}/{x}/{y}{r}.png"
-        />
+      {mounted && (
+        <MapContainer
+          center={[39.5, 32.5]}
+          zoom={5}
+          style={{ height: '520px', width: '100%', borderRadius: '0.75rem' }}
+          scrollWheelZoom={true}
+          className="z-0"
+          eventHandlers={onMapClick ? { click: handleMapClick } : undefined}
+        >
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+            url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager_labels_under/{z}/{x}/{y}{r}.png"
+          />
 
-        <MapController
-          selectedLane={selectedLaneId || null}
-          lanes={filteredLanes}
-          alternateLanes={alternateLanes}
-        />
+          <MapController
+            selectedLane={selectedLaneId || null}
+            lanes={filteredLanes}
+            alternateLanes={alternateLanes}
+          />
 
-        {/* Alternate routes first (dashed, blue) so primary draws on top */}
-        {alternateLanes.map((lane) => {
-          const { start, end } = getLaneCoords(lane);
-          const isSelected = selectedLaneId === lane.id;
-          const isHovered = hoveredLane === lane.id;
-          return (
-            <div key={`alt-${lane.id}`}>
-              <RouteLine
-                start={start}
-                end={end}
-                color="#3B82F6"
-                weight={3}
-                dashed={true}
-                isSelected={isSelected}
-                isHovered={isHovered}
-                onHover={(v) => setHoveredLane(v ? lane.id : null)}
-                onSelect={() => onLaneSelect?.(lane.id)}
-              />
-            </div>
-          );
-        })}
+          {/* Alternate routes first (dashed, blue) so primary draws on top */}
+          {alternateLanes.map((lane) => {
+            const { start, end } = getLaneCoords(lane);
+            const isSelected = selectedLaneId === lane.id;
+            const isHovered = hoveredLane === lane.id;
+            return (
+              <div key={`alt-${lane.id}`}>
+                <RouteLine
+                  start={start}
+                  end={end}
+                  color="#3B82F6"
+                  weight={3}
+                  dashed={true}
+                  isSelected={isSelected}
+                  isHovered={isHovered}
+                  onHover={(v) => setHoveredLane(v ? lane.id : null)}
+                  onSelect={() => onLaneSelect?.(lane.id)}
+                />
+              </div>
+            );
+          })}
 
-        {/* Primary routes (emission-colored, solid) */}
-        {filteredLanes.map((lane, index) => {
-          const { start, end } = getLaneCoords(lane);
-          const weight = Math.max(4, Math.min(14, 3 + lane.total_emissions_kg / 3500));
-          const color = getEmissionColor(lane.total_emissions_kg, minE, maxE);
-          const isSelected = selectedLaneId === lane.id;
-          const isHovered = hoveredLane === lane.id;
-          return (
-            <div key={lane.id}>
-              <RouteLine
-                start={start}
-                end={end}
-                color={color}
-                weight={weight}
-                isSelected={isSelected}
-                isHovered={isHovered}
-                onHover={(v) => setHoveredLane(v ? lane.id : null)}
-                onSelect={() => onLaneSelect?.(lane.id)}
-              />
-              <CircleMarker
-                center={start}
-                radius={6}
-                pathOptions={{
-                  fillColor: color,
-                  color: '#fff',
-                  fillOpacity: 1,
-                  weight: 2,
-                }}
-              />
-              <CircleMarker
-                center={end}
-                radius={6}
-                pathOptions={{
-                  fillColor: color,
-                  color: '#fff',
-                  fillOpacity: 1,
-                  weight: 2,
-                }}
-              />
-            </div>
-          );
-        })}
-      </MapContainer>
-
-      {/* Horizon-style legend at bottom */}
-      <div className="absolute bottom-3 left-3 right-3 z-[1000] flex flex-wrap items-center justify-center gap-4 rounded-lg bg-white/95 shadow-sm border border-gray-200/80 px-4 py-2.5">
-        <span className="text-xs font-medium text-gray-700">Emissions</span>
-        {['#10B981', '#84CC16', '#F59E0B', '#EF4444', '#7F1D1D'].map((hex, i) => (
-          <span key={hex} className="flex items-center gap-1.5 text-xs text-gray-600">
-            <span className="w-5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: hex }} />
-            {['Low', 'Med-low', 'Med-high', 'High', 'Very high'][i]}
-          </span>
-        ))}
-        {alternateLanes.length > 0 && (
-          <>
-            <span className="w-px h-4 bg-gray-200" />
-            <span className="flex items-center gap-1.5 text-xs text-gray-600">
-              <span className="w-5 h-0.5 rounded-full border-2 border-blue-500 border-dashed shrink-0" />
-              Alternates
-            </span>
-          </>
-        )}
-      </div>
+          {/* Primary routes (emission-colored, solid) */}
+          {filteredLanes.map((lane, index) => {
+            const { start, end } = getLaneCoords(lane);
+            const weight = Math.max(4, Math.min(14, 3 + lane.total_emissions_kg / 3500));
+            const color = getEmissionColor(lane.total_emissions_kg, minE, maxE);
+            const isSelected = selectedLaneId === lane.id;
+            const isHovered = hoveredLane === lane.id;
+            return (
+              <div key={lane.id}>
+                <RouteLine
+                  start={start}
+                  end={end}
+                  color={color}
+                  weight={weight}
+                  isSelected={isSelected}
+                  isHovered={isHovered}
+                  onHover={(v) => setHoveredLane(v ? lane.id : null)}
+                  onSelect={() => onLaneSelect?.(lane.id)}
+                />
+                <CircleMarker
+                  center={start}
+                  radius={6}
+                  pathOptions={{
+                    fillColor: color,
+                    color: '#fff',
+                    fillOpacity: 1,
+                    weight: 2,
+                  }}
+                />
+                <CircleMarker
+                  center={end}
+                  radius={6}
+                  pathOptions={{
+                    fillColor: color,
+                    color: '#fff',
+                    fillOpacity: 1,
+                    weight: 2,
+                  }}
+                />
+              </div>
+            );
+          })}
+        </MapContainer>
+      )}
     </div>
   );
 }

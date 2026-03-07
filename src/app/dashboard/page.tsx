@@ -66,6 +66,19 @@ export default function Dashboard() {
     const timeMap = new Map<string, number>();
     const vehicleMap = new Map<string, number>();
 
+    let underutilizedCount = 0;
+    let optimizedCount = 0;
+    let balancedCount = 0;
+
+    let underutilizedMetric = 0;
+    let optimizedMetric = 0;
+
+    const loadBucketMap = new Map<string, number>([
+      ['Underutilized (<50%)', 0],
+      ['Balanced (50-80%)', 0],
+      ['Optimized (>80%)', 0],
+    ]);
+
     shipments.forEach(s => {
       const val = getShipmentMetric(s, metricMode);
       totalMetric += val;
@@ -73,6 +86,29 @@ export default function Dashboard() {
       const dateStr = new Date(s.shipment_date).toISOString().split('T')[0];
       timeMap.set(dateStr, (timeMap.get(dateStr) || 0) + val);
       vehicleMap.set(s.vehicle_type, (vehicleMap.get(s.vehicle_type) || 0) + val);
+
+       const loadFactor = s.load_factor ?? 0;
+       if (loadFactor < 0.5) {
+         underutilizedCount += 1;
+         underutilizedMetric += val;
+         loadBucketMap.set(
+           'Underutilized (<50%)',
+           (loadBucketMap.get('Underutilized (<50%)') || 0) + 1
+         );
+       } else if (loadFactor < 0.8) {
+         balancedCount += 1;
+         loadBucketMap.set(
+           'Balanced (50-80%)',
+           (loadBucketMap.get('Balanced (50-80%)') || 0) + 1
+         );
+       } else {
+         optimizedCount += 1;
+         optimizedMetric += val;
+         loadBucketMap.set(
+           'Optimized (>80%)',
+           (loadBucketMap.get('Optimized (>80%)') || 0) + 1
+         );
+       }
     });
 
     const avgLoad = shipments.reduce((sum, s) => sum + s.load_factor, 0) / (shipments.length || 1);
@@ -85,10 +121,38 @@ export default function Dashboard() {
     const vehicleData = Array.from(vehicleMap.entries()).map(([name, value]) => ({ name, value }));
     const lanes = aggregateByLane(shipments).slice(0, 5);
 
-    return { totalMetric, esgScore, avgLoad, timeSeriesData, vehicleData, lanes };
+    const loadUtilizationData = Array.from(loadBucketMap.entries()).map(([segment, count]) => ({
+      segment,
+      count,
+    }));
+
+    const utilizationImpactData = [
+      { name: 'Underutilized', value: underutilizedMetric },
+      { name: 'Optimized', value: optimizedMetric },
+      { name: 'Other', value: Math.max(totalMetric - underutilizedMetric - optimizedMetric, 0) },
+    ];
+
+    const underutilizedShare = totalMetric > 0 ? (underutilizedMetric / totalMetric) * 100 : 0;
+
+    return {
+      totalMetric,
+      esgScore,
+      avgLoad,
+      timeSeriesData,
+      vehicleData,
+      lanes,
+      loadUtilizationData,
+      utilizationImpactData,
+      underutilizedShare,
+      underutilizedCount,
+      optimizedCount,
+      balancedCount,
+    };
   }, [shipments, metricMode]);
 
   const COLORS = ['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6'];
+  const LOAD_UTIL_COLORS = ['#A855F7', '#6366F1', '#E5E7EB'];
+  const UTIL_IMPACT_COLORS = ['#EF4444', '#10B981', '#9CA3AF'];
   const unit = getMetricUnit(metricMode);
   const label = getMetricLabel(metricMode);
 
@@ -175,9 +239,9 @@ export default function Dashboard() {
         </StaggerItem>
       </StaggerContainer>
 
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-7 relative z-10">
-        <ChartCard title={`${label} Trend`} description={`Daily ${label.toLowerCase()} across all active lanes`} className="lg:col-span-4">
-          <ResponsiveContainer width="100%" height="80%">
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-2 relative z-10">
+        <ChartCard title={`${label} Trend`} description={`Daily ${label.toLowerCase()} across all active lanes`}>
+          <ResponsiveContainer width="100%" height={300}>
             <AreaChart data={metrics.timeSeriesData} margin={{ top: 20, right: 10, left: -20, bottom: 0 }}>
               <defs>
                 <linearGradient id="colorMetric" x1="0" y1="0" x2="0" y2="1">
@@ -194,8 +258,8 @@ export default function Dashboard() {
           </ResponsiveContainer>
         </ChartCard>
 
-        <ChartCard title="Transport Mode Breakdown" description={`Proportional share of total ${label}`} className="lg:col-span-3">
-          <ResponsiveContainer width="100%" height="80%">
+        <ChartCard title="Transport Mode Breakdown" description={`Proportional share of total ${label}`}>
+          <ResponsiveContainer width="100%" height={300}>
             <PieChart>
               <Pie data={metrics.vehicleData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value" isAnimationActive={true} animationDuration={1200} animationBegin={400} animationEasing="ease-out">
                 {metrics.vehicleData.map((_, index) => (
@@ -209,9 +273,161 @@ export default function Dashboard() {
         </ChartCard>
       </div>
 
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-2 relative z-10">
+        <ChartCard
+          title="Load Utilization by Shipment"
+          description="How shipments are distributed across utilization bands"
+        >
+          <div className="flex flex-col sm:flex-row items-center sm:items-stretch gap-6">
+            <div className="relative flex-1 h-56">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={metrics.loadUtilizationData.map((d, index) => ({
+                      name: d.segment,
+                      value: d.count,
+                      fill: LOAD_UTIL_COLORS[index % LOAD_UTIL_COLORS.length],
+                    }))}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={80}
+                    paddingAngle={4}
+                    strokeWidth={0}
+                    isAnimationActive={true}
+                    animationDuration={1200}
+                    animationBegin={200}
+                    animationEasing="ease-out"
+                  >
+                    {metrics.loadUtilizationData.map((_, index) => (
+                      <Cell key={`load-util-cell-${index}`} fill={LOAD_UTIL_COLORS[index % LOAD_UTIL_COLORS.length]} />
+                    ))}
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <span className="text-[11px] text-muted-foreground">Total Shipments</span>
+                <span className="text-2xl font-semibold">
+                  {shipments.length.toLocaleString()}
+                </span>
+              </div>
+            </div>
+
+            <div className="w-full sm:w-48 space-y-3">
+              {metrics.loadUtilizationData.map((bucket, index) => {
+                const total = shipments.length || 1;
+                const pct = (bucket.count / total) * 100;
+                const color = LOAD_UTIL_COLORS[index % LOAD_UTIL_COLORS.length];
+                return (
+                  <div key={bucket.segment} className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="h-2.5 w-2.5 rounded-full"
+                        style={{ backgroundColor: color }}
+                      />
+                      <div className="flex flex-col">
+                        <span className="text-xs font-medium text-foreground">
+                          {bucket.segment}
+                        </span>
+                        <span className="text-[11px] text-muted-foreground">
+                          {bucket.count.toLocaleString()} shipments
+                        </span>
+                      </div>
+                    </div>
+                    <span className="text-xs font-semibold text-foreground">
+                      {pct.toFixed(0)}%
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </ChartCard>
+
+        <ChartCard
+          title="Impact of Underutilized Shipments"
+          description={`Emissions / cost share from underutilized vs optimized moves`}
+        >
+          <div className="flex flex-col sm:flex-row items-center sm:items-stretch gap-6">
+            <div className="relative flex-1 h-56">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={metrics.utilizationImpactData.map((d, index) => ({
+                      ...d,
+                      fill: UTIL_IMPACT_COLORS[index % UTIL_IMPACT_COLORS.length],
+                    }))}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={80}
+                    paddingAngle={4}
+                    strokeWidth={0}
+                    isAnimationActive={true}
+                    animationDuration={1200}
+                    animationBegin={250}
+                    animationEasing="ease-out"
+                  >
+                    {metrics.utilizationImpactData.map((_, index) => (
+                      <Cell key={`util-impact-cell-${index}`} fill={UTIL_IMPACT_COLORS[index % UTIL_IMPACT_COLORS.length]} />
+                    ))}
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <span className="text-[11px] text-muted-foreground">
+                  Total {label}
+                </span>
+                <span className="text-2xl font-semibold">
+                  {formatValue(metrics.totalMetric)}
+                </span>
+              </div>
+            </div>
+
+            <div className="w-full sm:w-48 space-y-3">
+              {metrics.utilizationImpactData.map((bucket, index) => {
+                const total = metrics.totalMetric || 1;
+                const pct = total > 0 ? (bucket.value / total) * 100 : 0;
+                const color = UTIL_IMPACT_COLORS[index % UTIL_IMPACT_COLORS.length];
+                const formattedValue =
+                  metricMode === 'cost'
+                    ? `$${(bucket.value / 1000).toFixed(1)}k`
+                    : `${(bucket.value / 1000).toFixed(1)}k ${unit}`;
+
+                return (
+                  <div key={bucket.name} className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="h-2.5 w-2.5 rounded-full"
+                        style={{ backgroundColor: color }}
+                      />
+                      <div className="flex flex-col">
+                        <span className="text-xs font-medium text-foreground">
+                          {bucket.name}
+                        </span>
+                        <span className="text-[11px] text-muted-foreground">
+                          {formattedValue}
+                        </span>
+                      </div>
+                    </div>
+                    <span className="text-xs font-semibold text-foreground">
+                      {pct.toFixed(0)}%
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </ChartCard>
+      </div>
+
       <div className="relative z-10">
         <ChartCard title="Highest Emission Lanes" description="Click a lane to drill into Lane Analysis." action={<span className="text-xs text-primary cursor-pointer hover:underline" onClick={() => router.push('/lane-analysis')}>View All →</span>}>
-          <ResponsiveContainer width="100%" height="80%">
+          <ResponsiveContainer width="100%" height={300}>
             <BarChart data={metrics.lanes} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#E5E7EB" />
               <XAxis type="number" stroke="#9CA3AF" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `${(val / 1000).toFixed(0)}k`} />

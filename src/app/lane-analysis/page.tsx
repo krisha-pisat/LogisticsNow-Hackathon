@@ -200,6 +200,8 @@ export default function LaneAnalysisPage() {
     },
   ];
 
+  const highestEmissionLanesStyle = { width: '100%', height: '300px' };
+
   return (
     <div className="space-y-5">
       {/* Header */}
