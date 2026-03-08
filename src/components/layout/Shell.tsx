@@ -6,7 +6,6 @@ import { BreadcrumbNav } from './BreadcrumbNav';
 import { Suspense } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { usePathname } from 'next/navigation';
-import { OnboardingModal } from '../onboarding/OnboardingModal';
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -38,7 +37,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           </div>
         </main>
       </div>
-      <OnboardingModal />
     </div>
   );
 }
+

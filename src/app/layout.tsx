@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
-import { Shell } from '@/components/layout/Shell';
+import { ShellWrapper } from '@/components/layout/ShellWrapper';
 import { Toaster } from 'sonner';
 
 const inter = Inter({ subsets: ['latin'] });
@@ -19,7 +19,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        <Shell>{children}</Shell>
+        <ShellWrapper>{children}</ShellWrapper>
         <Toaster position="bottom-right" richColors closeButton />
       </body>
     </html>

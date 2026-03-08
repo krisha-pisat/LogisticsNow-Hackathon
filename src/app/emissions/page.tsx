@@ -241,7 +241,7 @@ export default function EmissionsPage() {
                 </tr>
               </thead>
               <tbody>
-                <AnimatePresence mode="wait">
+                <AnimatePresence mode="popLayout">
                   {paginatedData.map((row, index) => (
                     <motion.tr key={row.shipment_id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: index * 0.03 }}
                       className="border-t hover:bg-primary/[0.03] transition-colors">
